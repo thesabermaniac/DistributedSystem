@@ -1,9 +1,6 @@
 package main;
 
-import java.io.BufferedInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.LinkedList;
@@ -25,10 +22,15 @@ public class Slave {
 
     private void connectToMaster() {
         try {
-            ServerSocket serverSocket = new ServerSocket(5000);
-            System.out.println(slaveTypeToString() + ": Awaiting connection to MASTER...");
+//            ServerSocket serverSocket = new ServerSocket(5000);
+//            System.out.println(slaveTypeToString() + ": Awaiting connection to MASTER...");
+//
+//            socket = serverSocket.accept();
+//            System.out.println(slaveTypeToString() + ": Connection to MASTER established.");
+            socket = new Socket("127.0.0.1", 5000);
+            System.out.println("Connected");
 
-            socket = serverSocket.accept();
+//            socket = serverSocket.accept();
             System.out.println(slaveTypeToString() + ": Connection to MASTER established.");
 
             in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
@@ -60,9 +62,12 @@ public class Slave {
 
     private void receiveJob() {
         try {
-            Job newJob = (Job) in.readObject();
-            synchronized (jobs) {
-                jobs.add(newJob);
+            while(true) {
+                Job newJob = (Job) in.readObject();
+                System.out.println("Type: " + newJob.getJobType() + "\tid: " + newJob.getId());
+                synchronized (jobs) {
+                    jobs.add(newJob);
+                }
             }
         } catch (IOException | ClassNotFoundException ioException) {
             ioException.printStackTrace();
@@ -139,5 +144,11 @@ public class Slave {
 
     private String slaveTypeToString() {
         return "SLAVE-" + slaveType;
+    }
+
+    public static void main(String[] args) {
+        Slave slave = new Slave("A");
+//        slave.connectToMaster();
+        slave.receiveJob();
     }
 }
