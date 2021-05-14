@@ -1,21 +1,18 @@
 package main;
 
-import java.io.BufferedInputStream;
-import java.io.DataOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.LinkedList;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class Slave {
+public class Slave implements Serializable{
     private final String slaveType;
-    private Socket socket;
-    private ObjectInputStream in;
-    private DataOutputStream out;
-    private final LinkedList<Job> jobs;
+    private transient Socket socket;
+    private transient ObjectInputStream in;
+    private transient ObjectOutputStream out;
+    public final LinkedList<Job> jobs;
 
     Slave(String slaveType) {
         this.slaveType = slaveType;
@@ -25,14 +22,13 @@ public class Slave {
 
     private void connectToMaster() {
         try {
-            ServerSocket serverSocket = new ServerSocket(5000);
-            System.out.println(slaveTypeToString() + ": Awaiting connection to MASTER...");
-
-            socket = serverSocket.accept();
+            socket = new Socket("127.0.0.1", 5000);
+            System.out.println("Connected");
             System.out.println(slaveTypeToString() + ": Connection to MASTER established.");
 
-            in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
-            out = new DataOutputStream(socket.getOutputStream());
+            out = new ObjectOutputStream(socket.getOutputStream());
+            Slave slave = this;
+            out.writeObject(slave);
         } catch (IOException ioException) {
             ioException.printStackTrace();
         }
@@ -51,7 +47,8 @@ public class Slave {
 
     private void sendMessageToMaster(String message) {
         try {
-            out.writeUTF(message);
+            System.out.println(message);
+            out.writeObject(message);
             out.flush();
         } catch (IOException ioException) {
             ioException.printStackTrace();
@@ -60,9 +57,13 @@ public class Slave {
 
     private void receiveJob() {
         try {
-            Job newJob = (Job) in.readObject();
-            synchronized (jobs) {
-                jobs.add(newJob);
+            in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
+            while (jobs.size() < 9) {
+                Job newJob = (Job) in.readObject();
+                System.out.println("Type: " + newJob.getJobType() + "\tid: " + newJob.getId());
+                synchronized (jobs) {
+                    jobs.add(newJob);
+                }
             }
         } catch (IOException | ClassNotFoundException ioException) {
             ioException.printStackTrace();
@@ -139,5 +140,16 @@ public class Slave {
 
     private String slaveTypeToString() {
         return "SLAVE-" + slaveType;
+    }
+
+    public static void main(String[] args) {
+        Slave slave = new Slave("A");
+        Slave slave2 = new Slave("B");
+//        slave.connectToMaster();
+//        slave.sendMessageToMaster(slave.slaveTypeToString());
+        slave.receiveJob();
+        slave2.receiveJob();
+        slave.sendMessageToMaster("Finished!");
+        slave2.sendMessageToMaster("Finished!");
     }
 }

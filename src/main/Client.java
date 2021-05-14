@@ -2,18 +2,16 @@ package main;
 //todo user creates thread to send
 //todo Thread which recieves
 import java.io.*;
-import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Scanner;
 
-public class Client {
-    private ServerSocket serverSocket;
-    private static Socket socket;
-    private static ObjectInputStream in;
-    private static ObjectOutputStream out;
+public class Client implements Serializable{
+    private static transient Socket socket;
     private int port;
-    static Scanner sc = new Scanner(System.in);
+    static transient Scanner sc = new Scanner(System.in);
     static int idNumber = 0;
+    static transient ObjectOutputStream out;
+    static transient ObjectInputStream in;
 
     Client(int port) {
         this.port = port;
@@ -22,15 +20,12 @@ public class Client {
 
     private void connect() {
         try {
-            serverSocket = new ServerSocket(port);
-            System.out.println("Server started");
+            socket = new Socket("127.0.0.1", port);
+            System.out.println("Connected");
 
-            System.out.println("Waiting for Master");
-
-            socket = serverSocket.accept();
-            System.out.println("Master connected");
-            in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
             out = new ObjectOutputStream(socket.getOutputStream());
+            out.writeObject(this);
+            out.flush();
             // todo make to accept from user the job and number and create the class...
         }
         catch (IOException e){
@@ -47,7 +42,8 @@ public class Client {
         } catch (IOException ioException) {ioException.printStackTrace();}
     }
 
-    public static String sendJobToMasterAndReceiveFromUser() throws InterruptedException {
+    public static String sendJobToMasterAndReceiveFromUser() throws InterruptedException, IOException {
+
         System.out.println("Please Select Either Job A or B: ");
         System.out.println("If you are done type Completed.");
         String jobType = sc.nextLine();
@@ -64,13 +60,14 @@ public class Client {
 
     public static class UserAndMasterThread extends Thread{
         public void run(){
-                try {
-                    while (!sendJobToMasterAndReceiveFromUser().equals("Completed"));
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
+
+            try {
+                while (!sendJobToMasterAndReceiveFromUser().equals("Completed"));
+            } catch (InterruptedException | IOException e) {
+                e.printStackTrace();
             }
         }
+    }
 
     public static class SendToMaster extends Thread {
         final ObjectOutputStream outputStream;
@@ -94,18 +91,21 @@ public class Client {
     public static class ReceiveFromMaster extends Thread {
         final ObjectInputStream inputStream;
 
-        public ReceiveFromMaster(ObjectInputStream inputStream) {
+
+        public ReceiveFromMaster(ObjectInputStream inputStream) throws IOException {
+
             this.inputStream = inputStream;
 //            this.job = job;
         }
 
         public void run(){
-            String s = "";
-            while (!s.equals("Completed")) {
+            Job j = new Job("", -1);
+            while (!j.getJobType().equals("Completed")) {
                 try {
-                    s = (String) inputStream.readObject();
-                    if (!s.equals("Completed")) {
-                        System.out.println("Job " + s + " Completed.");
+                    j = (Job) inputStream.readObject();
+                    if (!j.getJobType().equals("Completed")) {
+                        System.out.println("Job " + j.getJobType() + " Completed.");
+
                     }
                     else{
                         System.out.println("All Jobs Completed");
@@ -117,13 +117,14 @@ public class Client {
         }
     }
 
-    public static void main(String[] args) throws InterruptedException {
+    public static void main(String[] args) throws InterruptedException, IOException {
         Client c = new Client(5000);
         UserAndMasterThread userAndMasterThread = new UserAndMasterThread();
-        ReceiveFromMaster receiveFromMaster = new ReceiveFromMaster(in); //todo check
+//        ReceiveFromMaster receiveFromMaster = new ReceiveFromMaster(/*in*/); //todo check
         userAndMasterThread.start();
-        receiveFromMaster.start();
-        c.disconnectFromMaster();
+//        receiveFromMaster.start();
+//        c.disconnectFromMaster();
+
         //todo disconnect send to master
 
 

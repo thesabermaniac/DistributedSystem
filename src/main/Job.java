@@ -1,6 +1,8 @@
 package main;
 
-public class Job {
+import java.io.Serializable;
+
+public class Job implements Serializable {
     private final String jobType;
     private final int id;
     private boolean isFinished = false;
