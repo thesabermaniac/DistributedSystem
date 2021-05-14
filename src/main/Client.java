@@ -43,6 +43,7 @@ public class Client implements Serializable{
     }
 
     public static String sendJobToMasterAndReceiveFromUser() throws InterruptedException, IOException {
+
         System.out.println("Please Select Either Job A or B: ");
         System.out.println("If you are done type Completed.");
         String jobType = sc.nextLine();
@@ -59,6 +60,7 @@ public class Client implements Serializable{
 
     public static class UserAndMasterThread extends Thread{
         public void run(){
+
             try {
                 while (!sendJobToMasterAndReceiveFromUser().equals("Completed"));
             } catch (InterruptedException | IOException e) {
@@ -89,7 +91,9 @@ public class Client implements Serializable{
     public static class ReceiveFromMaster extends Thread {
         final ObjectInputStream inputStream;
 
+
         public ReceiveFromMaster(ObjectInputStream inputStream) throws IOException {
+
             this.inputStream = inputStream;
 //            this.job = job;
         }
@@ -101,6 +105,7 @@ public class Client implements Serializable{
                     j = (Job) inputStream.readObject();
                     if (!j.getJobType().equals("Completed")) {
                         System.out.println("Job " + j.getJobType() + " Completed.");
+
                     }
                     else{
                         System.out.println("All Jobs Completed");
@@ -119,6 +124,7 @@ public class Client implements Serializable{
         userAndMasterThread.start();
 //        receiveFromMaster.start();
 //        c.disconnectFromMaster();
+
         //todo disconnect send to master
 
 
