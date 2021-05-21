@@ -1,11 +1,15 @@
 package main;
 //todo user creates thread to send
 //todo Thread which recieves
-import java.io.*;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.net.Socket;
 import java.util.Scanner;
 
-public class Client implements Serializable{
+public class Client implements Serializable {
     private static transient Socket socket;
     private int port;
     static transient Scanner sc = new Scanner(System.in);
@@ -27,8 +31,7 @@ public class Client implements Serializable{
             out.writeObject(this);
             out.flush();
             // todo make to accept from user the job and number and create the class...
-        }
-        catch (IOException e){
+        } catch (IOException e) {
             e.printStackTrace();
         }
     }
@@ -39,7 +42,9 @@ public class Client implements Serializable{
             out.close();
             socket.close();
             System.out.println("Client disconnected from MASTER, all jobs completed.");
-        } catch (IOException ioException) {ioException.printStackTrace();}
+        } catch (IOException ioException) {
+            ioException.printStackTrace();
+        }
     }
 
     public static String sendJobToMasterAndReceiveFromUser() throws InterruptedException, IOException {
@@ -47,7 +52,7 @@ public class Client implements Serializable{
         System.out.println("Please Select Either Job A or B: ");
         System.out.println("If you are done type Completed.");
         String jobType = sc.nextLine();
-        while (!jobType.equals("A") && !jobType.equals("B") && !jobType.equals("Completed")){
+        while (!jobType.equals("A") && !jobType.equals("B") && !jobType.equals("Completed")) {
             System.out.println("Enter either A, B, or Completed.");
             jobType = sc.nextLine();
         }
@@ -58,11 +63,14 @@ public class Client implements Serializable{
         return jobType;
     }
 
-    public static class UserAndMasterThread extends Thread{
-        public void run(){
+    public static class UserAndMasterThread extends Thread {
+        public void run() {
 
             try {
-                while (!sendJobToMasterAndReceiveFromUser().equals("Completed"));
+                while (!sendJobToMasterAndReceiveFromUser().equals("Completed")) {
+
+                }
+                System.out.println("Finished");
             } catch (InterruptedException | IOException e) {
                 e.printStackTrace();
             }
@@ -78,7 +86,7 @@ public class Client implements Serializable{
             this.job = job;
         }
 
-        public void run(){
+        public void run() {
             try {
                 outputStream.writeObject(job);
                 outputStream.flush();
@@ -98,7 +106,7 @@ public class Client implements Serializable{
 //            this.job = job;
         }
 
-        public void run(){
+        public void run() {
             Job j = new Job("", -1);
             while (!j.getJobType().equals("Completed")) {
                 try {
@@ -106,8 +114,7 @@ public class Client implements Serializable{
                     if (!j.getJobType().equals("Completed")) {
                         System.out.println("Job " + j.getJobType() + " Completed.");
 
-                    }
-                    else{
+                    } else {
                         System.out.println("All Jobs Completed");
                     }
                 } catch (IOException | ClassNotFoundException e) {
