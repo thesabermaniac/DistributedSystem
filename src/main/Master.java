@@ -5,11 +5,11 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Master {
-    public static final ArrayList<Job> jobs = new ArrayList<>();
+    public static final CopyOnWriteArrayList<Job> jobs = new CopyOnWriteArrayList<>();
     private HashMap<Socket, Object> activeClients = new HashMap<>();
     private static Socket socket;
     private final int port;
@@ -64,18 +64,6 @@ public class Master {
 
     }
 
-    public static synchronized void receive(Job job) {
-        synchronized (jobs) {
-            jobs.add(job);
-        }
-    }
-
-    public static synchronized int getJobsSize() {
-        synchronized (jobs) {
-            return jobs.size();
-        }
-    }
-
     public void delegate() throws IOException {
         out = new ObjectOutputStream(socket.getOutputStream());
 
@@ -110,24 +98,22 @@ public class Master {
             try {
                 Job job;
                 while (true) {
-                    if (getJobsSize() > 0) {
-                        synchronized (jobs) {
-                            job = jobs.get(0);
-                        }
-                        if (activeClients.get(socket) instanceof Slave) {
-                            Slave slave = (Slave) activeClients.get(socket);
+                    synchronized (jobs) {
+                        if (jobs.size() > 0) {
+                            if (activeClients.get(socket) instanceof Slave) {
+                                job = jobs.get(0);
+                                Slave slave = (Slave) activeClients.get(socket);
 
-                            if (job.getJobType().equals("Completed")) {
-                                output.writeObject(job);
-                                output.flush();
-                                break;
-                            }
+                                if (job.getJobType().equals("Completed")) {
+                                    output.writeObject(job);
+                                    output.flush();
+                                    break;
+                                }
 
-                            if (slave.getSlaveType().equals(job.getJobType())) {
-                                output.writeObject(job);
-                                output.flush();
-                                System.out.println("Sent job " + job.getId() + ", type " + job.getJobType());
-                                synchronized (jobs) {
+                                if (slave.getSlaveType().equals(job.getJobType())) {
+                                    output.writeObject(job);
+                                    output.flush();
+                                    System.out.println("Sent job " + job.getId() + ", type " + job.getJobType());
                                     jobs.remove(job);
                                 }
                             }
@@ -154,13 +140,15 @@ public class Master {
         @Override
         public void run() {
             try {
-                Job job = (Job) input.readObject();
+                Object obj = input.readObject();
+                System.out.println(obj);
+                Job job = (Job)obj;
                 while (true) {
-                    receive(job);
+                    jobs.add(job);
                     System.out.println("Received job " + job.getId());
                     job = (Job) input.readObject();
                     if (job.getJobType().equals("Completed")) {
-                        receive(job);
+                        jobs.add(job);
                         break;
                     }
                 }
