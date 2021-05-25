@@ -1,8 +1,6 @@
 package main;
 
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
@@ -13,8 +11,10 @@ public class Master {
     private HashMap<Socket, Object> activeClients = new HashMap<>();
     private static Socket socket;
     private final int port;
-    static ObjectInputStream in;
-    static ObjectOutputStream out;
+    static ObjectInputStream objectIn;
+    static ObjectOutputStream objectOut;
+    static DataInputStream dataIn;
+    static DataOutputStream dataOut;
 
     public Master(int port) throws IOException {
         this.port = port;
@@ -34,8 +34,8 @@ public class Master {
                 socket = serverSocket.accept();
 
                 System.out.println("New client connected");
-                in = new ObjectInputStream(socket.getInputStream());
-                Object input = in.readObject();
+                objectIn = new ObjectInputStream(socket.getInputStream());
+                Object input = objectIn.readObject();
                 if (input instanceof Slave) {
                     Slave slave = (Slave) input;
                     activeClients.put(socket, slave);
@@ -65,21 +65,24 @@ public class Master {
     }
 
     public void delegate() throws IOException {
-        out = new ObjectOutputStream(socket.getOutputStream());
+        objectOut = new ObjectOutputStream(socket.getOutputStream());
 
-        Thread t = new OutputThread(socket, activeClients, out);
+        Thread t = new OutputThread(socket, activeClients, objectOut);
 
         t.start();
-
     }
 
     public void receiveMessage() {
         try {
-            InputThread thread = new InputThread(socket, in);
+            InputThread thread = new InputThread(socket, objectIn);
             thread.start();
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private void getTimesFromSlaves() {
+
     }
 
     static class OutputThread extends Thread {

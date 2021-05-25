@@ -5,13 +5,14 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
 
 public class Slave implements Serializable {
     private final String slaveType;
     private transient Socket socket;
-    private transient ObjectInputStream in;
-    private transient ObjectOutputStream out;
+    private transient ObjectInputStream objectIn;
+    private transient ObjectOutputStream objectOut;
+    private transient DataInput dataIn;
+    private transient DataOutputStream dataOut;
     public final List<Job> jobs = Collections.synchronizedList(new ArrayList<>());
 
     Slave(String slaveType) {
@@ -19,6 +20,7 @@ public class Slave implements Serializable {
         connectToMaster();
         new JobReceiptThread().start();
         new DoJobsThread().start();
+        new TimingRequestThread().start();
     }
 
     private void connectToMaster() {
@@ -27,9 +29,14 @@ public class Slave implements Serializable {
             System.out.println("Connected");
             System.out.println(slaveTypeToString() + ": Connection to MASTER established.");
 
-            out = new ObjectOutputStream(socket.getOutputStream());
+            dataIn = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
+            dataOut = new DataOutputStream(socket.getOutputStream());
+
+            objectIn = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
+            objectOut = new ObjectOutputStream(socket.getOutputStream());
+
             Slave slave = this;
-            out.writeObject(slave);
+            objectOut.writeObject(slave);
         } catch (IOException ioException) {
             ioException.printStackTrace();
         }
@@ -37,8 +44,8 @@ public class Slave implements Serializable {
 
     private void disconnectFromMaster() {
         try {
-            in.close();
-            out.close();
+            objectIn.close();
+            objectOut.close();
             socket.close();
             System.out.println(slaveTypeToString() + ": Disconnected from MASTER.");
         } catch (IOException ioException) {
@@ -54,9 +61,8 @@ public class Slave implements Serializable {
         @Override
         public void run() {
             try {
-                in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
                 while (true) {
-                    Job newJob = (Job) in.readObject();
+                    Job newJob = (Job) objectIn.readObject();
                     if (newJob.getJobType().equals("Completed")) {
                         break;
                     }
@@ -112,34 +118,55 @@ public class Slave implements Serializable {
                 }
             }
 
-            System.out.println("Finished");
+            System.out.println("FINISHED: DoJobsThread");
         }
     }
 
+    class TimingRequestThread extends Thread {
 
-    public int computeTimeTillAllJobsFinished() {
-        AtomicInteger total = new AtomicInteger();
+        public void run() {
+            try {
+                int time = 0;
+                int signal = 0;
+                while (true) {
+                    signal = dataIn.readInt();
 
-        if (jobs.isEmpty()) {
-            return total.get();
+                    if (signal == -1) {
+                        break;
+                    }
+
+                    time = computeTimeTillAllJobsFinished();
+                    dataOut.write(time);
+                    dataOut.flush();
+                }
+
+                System.out.println("FINISHED: TimingRequestThread");
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
         }
+    }
 
-        new Thread(() -> {
+    private int computeTimeTillAllJobsFinished() {
+        int total = 0;
+
+        if (!jobs.isEmpty()) {
             for (Job job : jobs) {
                 if (job.getJobType().equals(slaveType)) {
-                    total.addAndGet(2);
+                    total += 2;
                 } else {
-                    total.addAndGet(10);
+                    total += 10;
                 }
             }
-        });
+        }
 
-        return total.get();
+        System.out.println("Time until " + slaveTypeToString() + " is finished with its jobs: " + computeTimeTillAllJobsFinished());
+        return total;
     }
 
 
     public static void main(String[] args) {
-        Slave slave = new Slave("A");
+        Slave slave1 = new Slave("A");
         Slave slave2 = new Slave("B");
     }
 }
