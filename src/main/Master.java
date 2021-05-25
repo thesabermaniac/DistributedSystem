@@ -1,9 +1,13 @@
 package main;
 
-import java.io.*;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.Objects;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 public class Master {
@@ -13,8 +17,8 @@ public class Master {
     private final int port;
     static ObjectInputStream objectIn;
     static ObjectOutputStream objectOut;
-    static DataInputStream dataIn;
-    static DataOutputStream dataOut;
+//    static DataInputStream dataIn;
+//    static DataOutputStream dataOut;
 
     public Master(int port) throws IOException {
         this.port = port;
@@ -81,10 +85,6 @@ public class Master {
         }
     }
 
-    private void getTimesFromSlaves() {
-
-    }
-
     static class OutputThread extends Thread {
         final Socket socket;
         HashMap<Socket, Object> activeClients;
@@ -100,34 +100,75 @@ public class Master {
         public void run() {
             try {
                 Job job;
+//                dataOut = new DataOutputStream(socket.getOutputStream());
+//                dataIn = new DataInputStream(socket.getInputStream());
                 while (true) {
                     synchronized (jobs) {
                         if (jobs.size() > 0) {
-                            if (activeClients.get(socket) instanceof Slave) {
-                                job = jobs.get(0);
-                                Slave slave = (Slave) activeClients.get(socket);
+                            job = jobs.get(0);
+                            Socket targetSocket = determineTargetSocket(Objects.requireNonNull(getTimesFromSlaves()), job);
+//                            Slave slave = (Slave) activeClients.get(targetSocket);
 
-                                if (job.getJobType().equals("Completed")) {
-                                    output.writeObject(job);
-                                    output.flush();
-                                    break;
-                                }
 
-                                if (slave.getSlaveType().equals(job.getJobType())) {
-                                    output.writeObject(job);
-                                    output.flush();
-                                    System.out.println("Sent job " + job.getId() + ", type " + job.getJobType());
-                                    jobs.remove(job);
-                                }
+                            if (job.getJobType().equals("Completed")) {
+                                output.writeObject(job);
+                                output.flush();
+                                break;
+                            }
+
+                            if (targetSocket.equals(socket)) {
+                                output.writeObject(job);
+                                output.flush();
+                                System.out.println("Sent job " + job.getId() + ", type " + job.getJobType());
+                                jobs.remove(job);
                             }
                         }
                     }
                 }
 
+
                 System.out.println("FINISHED: OutputThread");
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        }
+
+        private HashMap<Integer, Socket> getTimesFromSlaves() {
+            try {
+                HashMap<Integer, Socket> slaveTimes = new HashMap<>();
+                for (Socket s : activeClients.keySet()) {
+                    if (activeClients.get(s) instanceof Slave) {
+
+                        objectOut.write(1);
+                        objectOut.flush();
+
+                        slaveTimes.put(objectIn.readInt(), s);
+                    }
+                }
+
+                return slaveTimes;
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+
+            return null;
+        }
+
+        private Socket determineTargetSocket(HashMap<Integer, Socket> slaveTimes, Job job) {
+            String jobType = job.getJobType();
+            slaveTimes.forEach((key, value) -> {
+                int timeAddition = 0;
+                Slave slave = (Slave) activeClients.get(value);
+                if (slave.getSlaveType().equals(jobType)) {
+                    timeAddition = 2;
+                } else {
+                    timeAddition = 10;
+                }
+                slaveTimes.put((key + timeAddition), value);
+            });
+
+            int lowestTime = slaveTimes.keySet().stream().min(Comparator.naturalOrder()).orElse(0);
+            return slaveTimes.get(lowestTime);
         }
     }
 
@@ -145,7 +186,7 @@ public class Master {
             try {
                 Object obj = input.readObject();
                 System.out.println(obj);
-                Job job = (Job)obj;
+                Job job = (Job) obj;
                 while (true) {
                     jobs.add(job);
                     System.out.println("Received job " + job.getId());

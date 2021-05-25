@@ -11,8 +11,8 @@ public class Slave implements Serializable {
     private transient Socket socket;
     private transient ObjectInputStream objectIn;
     private transient ObjectOutputStream objectOut;
-    private transient DataInput dataIn;
-    private transient DataOutputStream dataOut;
+//    private transient DataInputStream dataIn;
+//    private transient DataOutputStream dataOut;
     public final List<Job> jobs = Collections.synchronizedList(new ArrayList<>());
 
     Slave(String slaveType) {
@@ -29,14 +29,16 @@ public class Slave implements Serializable {
             System.out.println("Connected");
             System.out.println(slaveTypeToString() + ": Connection to MASTER established.");
 
-            dataIn = new DataInputStream(new BufferedInputStream(socket.getInputStream()));
-            dataOut = new DataOutputStream(socket.getOutputStream());
-
-            objectIn = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
             objectOut = new ObjectOutputStream(socket.getOutputStream());
-
             Slave slave = this;
             objectOut.writeObject(slave);
+
+            objectIn = new ObjectInputStream(socket.getInputStream());
+//            objectOut.flush();
+
+//            dataOut = new DataOutputStream(socket.getOutputStream());
+//            dataIn = new DataInputStream(socket.getInputStream());
+
         } catch (IOException ioException) {
             ioException.printStackTrace();
         }
@@ -126,18 +128,20 @@ public class Slave implements Serializable {
 
         public void run() {
             try {
+//                dataOut = new DataOutputStream(socket.getOutputStream());
+//                dataIn = new DataInputStream(socket.getInputStream());
                 int time = 0;
                 int signal = 0;
                 while (true) {
-                    signal = dataIn.readInt();
+                    signal = objectIn.readInt();
 
                     if (signal == -1) {
                         break;
                     }
 
                     time = computeTimeTillAllJobsFinished();
-                    dataOut.write(time);
-                    dataOut.flush();
+                    objectOut.write(time);
+                    objectOut.flush();
                 }
 
                 System.out.println("FINISHED: TimingRequestThread");
