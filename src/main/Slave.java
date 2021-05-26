@@ -1,6 +1,11 @@
 package main;
 
-import java.io.*;
+import main.messages.JobRequest;
+import main.messages.JobType;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -8,19 +13,17 @@ import java.util.List;
 
 public class Slave implements Serializable {
     private final String slaveType;
-    private transient Socket socket;
-    private transient ObjectInputStream objectIn;
-    private transient ObjectOutputStream objectOut;
-//    private transient DataInputStream dataIn;
-//    private transient DataOutputStream dataOut;
-    public final List<Job> jobs = Collections.synchronizedList(new ArrayList<>());
+    private Socket socket;
+    private ObjectInputStream objectIn;
+    private ObjectOutputStream objectOut;
 
     Slave(String slaveType) {
         this.slaveType = slaveType;
         connectToMaster();
-        new JobReceiptThread().start();
-        new DoJobsThread().start();
-        new TimingRequestThread().start();
+        new ObjectReceiptThread().start();
+//        new JobReceiptThread().start();
+//        new DoJobsThread().start();
+//        new TimingRequestThread().start();
     }
 
     private void connectToMaster() {
@@ -55,6 +58,32 @@ public class Slave implements Serializable {
         }
     }
 
+    class ObjectReceiptThread extends Thread {
+
+        @Override
+        public void run() {
+            try {
+                while (true) {
+                    Object receivedObject = objectIn.readObject();
+
+                    if (receivedObject instanceof Job) {
+                        if (((Job) receivedObject).getJobType().equals("Completed")) {
+                            break;
+                        }
+//                        new DoJobsThread().start();
+                        jobs.add((Job) receivedObject);
+                        new DoJobsThread().start();
+                    }
+                    if (receivedObject instanceof Integer) {
+                        new TimingRequestThread().start();
+                    }
+                }
+            } catch (IOException | ClassNotFoundException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
     class JobReceiptThread extends Thread {
 
         JobReceiptThread() {
@@ -80,7 +109,6 @@ public class Slave implements Serializable {
         }
     }
 
-
     public String getSlaveType() {
         return slaveType;
     }
@@ -89,21 +117,13 @@ public class Slave implements Serializable {
         return "SLAVE-" + slaveType;
     }
 
-
     class DoJobsThread extends Thread {
         @Override
         public void run() {
-            while (true) {
-                if (jobs.isEmpty()) {
-                    continue;
-                }
 
+            synchronized (jobs) {
                 Job currJob;
                 currJob = jobs.get(0);
-
-                if (currJob.getJobType().equals("Completed")) {
-                    break;
-                }
 
                 try {
                     if (currJob.getJobType().equals(slaveType)) {
@@ -118,7 +138,9 @@ public class Slave implements Serializable {
                 } catch (InterruptedException e) {
                     e.printStackTrace();
                 }
+
             }
+
 
             System.out.println("FINISHED: DoJobsThread");
         }
@@ -130,19 +152,17 @@ public class Slave implements Serializable {
             try {
 //                dataOut = new DataOutputStream(socket.getOutputStream());
 //                dataIn = new DataInputStream(socket.getInputStream());
-                int time = 0;
-                int signal = 0;
-                while (true) {
-                    signal = objectIn.readInt();
+                Integer time = 0;
+//                int signal = 0;
+//                signal = objectIn.readInt();
+//
+//                if (signal == -1) {
+//                    return;
+//                }
 
-                    if (signal == -1) {
-                        break;
-                    }
-
-                    time = computeTimeTillAllJobsFinished();
-                    objectOut.write(time);
-                    objectOut.flush();
-                }
+                time = computeTimeTillAllJobsFinished();
+                objectOut.writeObject(time);
+                objectOut.flush();
 
                 System.out.println("FINISHED: TimingRequestThread");
             } catch (IOException e) {
@@ -154,17 +174,19 @@ public class Slave implements Serializable {
     private int computeTimeTillAllJobsFinished() {
         int total = 0;
 
-        if (!jobs.isEmpty()) {
-            for (Job job : jobs) {
-                if (job.getJobType().equals(slaveType)) {
-                    total += 2;
-                } else {
-                    total += 10;
-                }
+//        if (!jobs.isEmpty()) {
+
+        for (Job job : jobs) {
+            if (job.getJobType().equals(slaveType)) {
+                total += 2;
+            } else {
+                total += 10;
             }
         }
 
-        System.out.println("Time until " + slaveTypeToString() + " is finished with its jobs: " + computeTimeTillAllJobsFinished());
+//        }
+
+//        System.out.println("Time until " + slaveTypeToString() + " is finished with its jobs: " + computeTimeTillAllJobsFinished());
         return total;
     }
 
