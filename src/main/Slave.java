@@ -5,14 +5,13 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Slave implements Serializable {
     private final String slaveType;
     private transient Socket socket;
-    private transient ObjectInputStream in;
     private transient ObjectOutputStream out;
-    public final List<Job> jobs = Collections.synchronizedList(new ArrayList<>());
+    private final List<Job> jobs = Collections.synchronizedList(new ArrayList<>());
 
     Slave(String slaveType) {
         this.slaveType = slaveType;
@@ -35,17 +34,6 @@ public class Slave implements Serializable {
         }
     }
 
-    private void disconnectFromMaster() {
-        try {
-            in.close();
-            out.close();
-            socket.close();
-            System.out.println(slaveTypeToString() + ": Disconnected from MASTER.");
-        } catch (IOException ioException) {
-            ioException.printStackTrace();
-        }
-    }
-
     class JobReceiptThread extends Thread {
 
         JobReceiptThread() {
@@ -54,18 +42,19 @@ public class Slave implements Serializable {
         @Override
         public void run() {
             try {
-                in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
+                ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
                 while (true) {
                     Job newJob = (Job) in.readObject();
-                    if (newJob.getJobType().equals("Completed")) {
+                    if (newJob.getJobType().equals("COMPLETED")) {
+                        jobs.add(newJob);
                         break;
                     }
 
-                    System.out.println("Type: " + newJob.getJobType() + "\tid: " + newJob.getId());
+                    System.out.println(slaveTypeToString() + " Received " + newJob.toString());
                     jobs.add(newJob);
                 }
 
-                System.out.println("Finished");
+                System.out.println(slaveTypeToString() + " - FINISHED: JobReceiptThread");
             } catch (IOException | ClassNotFoundException ioException) {
                 ioException.printStackTrace();
             }
@@ -77,15 +66,22 @@ public class Slave implements Serializable {
         return slaveType;
     }
 
-    private String slaveTypeToString() {
+    public String slaveTypeToString() {
         return "SLAVE-" + slaveType;
     }
 
 
     class DoJobsThread extends Thread {
+        private final AtomicBoolean running = new AtomicBoolean(false);
+
+        public void end(){
+            running.set(false);
+        }
+
         @Override
         public void run() {
-            while (true) {
+            running.set(true);
+            while (running.get()) {
                 if (jobs.isEmpty()) {
                     continue;
                 }
@@ -93,7 +89,8 @@ public class Slave implements Serializable {
                 Job currJob;
                 currJob = jobs.get(0);
 
-                if (currJob.getJobType().equals("Completed")) {
+                if (currJob.getJobType().equals("COMPLETED")) {
+                    this.end();
                     break;
                 }
 
@@ -103,39 +100,20 @@ public class Slave implements Serializable {
                     } else {
                         Thread.sleep(10_000);
                     }
+                    out.writeObject(currJob);
 
                     jobs.remove(0);
 
-                    System.out.println(slaveTypeToString() + " Job ID " + currJob.getId() + " has been completed");
-                } catch (InterruptedException e) {
+                    System.out.println(slaveTypeToString() + " completed " + currJob.toString());
+                } catch (InterruptedException | IOException e) {
                     e.printStackTrace();
                 }
             }
 
-            System.out.println("Finished");
+            System.out.println(slaveTypeToString() + " - FINISHED: DoJobsThread");
         }
     }
 
-
-    public int computeTimeTillAllJobsFinished() {
-        AtomicInteger total = new AtomicInteger();
-
-        if (jobs.isEmpty()) {
-            return total.get();
-        }
-
-        new Thread(() -> {
-            for (Job job : jobs) {
-                if (job.getJobType().equals(slaveType)) {
-                    total.addAndGet(2);
-                } else {
-                    total.addAndGet(10);
-                }
-            }
-        });
-
-        return total.get();
-    }
 
 
     public static void main(String[] args) {

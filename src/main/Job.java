@@ -4,19 +4,19 @@ import java.io.Serializable;
 
 public class Job implements Serializable {
     private final String jobType;
-    private final int id;
+    private final String id;
     private boolean isFinished = false;
 
-    public Job(String jobType, int id) {
+    public Job(String jobType, int id, Client client) {
         this.jobType = jobType;
-        this.id = id;
+        this.id = client.toString() + id;
     }
 
     public String getJobType() {
         return jobType;
     }
 
-    public int getId() {
+    public String getId() {
         return id;
     }
 
@@ -26,5 +26,9 @@ public class Job implements Serializable {
 
     public boolean getIsFinished() {
         return isFinished;
+    }
+
+    public String toString(){
+        return "JOB{" + getId() + ", " + getJobType() + "}";
     }
 }

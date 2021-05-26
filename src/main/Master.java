@@ -7,16 +7,18 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.HashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class Master {
     public static final CopyOnWriteArrayList<Job> jobs = new CopyOnWriteArrayList<>();
-    private HashMap<Socket, Object> activeClients = new HashMap<>();
+    private static final CopyOnWriteArrayList<Job> slaveAJobs = new CopyOnWriteArrayList<>();
+    private static final CopyOnWriteArrayList<Job> slaveBJobs = new CopyOnWriteArrayList<>();
+    private final HashMap<Socket, Object> activeClients = new HashMap<>();
     private static Socket socket;
     private final int port;
-    static ObjectInputStream in;
-    static ObjectOutputStream out;
+    private static ObjectInputStream in;
 
-    public Master(int port) throws IOException {
+    public Master(int port){
         this.port = port;
         startMaster();
     }
@@ -30,7 +32,7 @@ public class Master {
             serverSocket = new ServerSocket(port);
             serverSocket.setReuseAddress(true);
 
-            while (true) {
+            while (activeClients.keySet().size() < 4) {
                 socket = serverSocket.accept();
 
                 System.out.println("New client connected");
@@ -49,6 +51,7 @@ public class Master {
                 delegate();
                 receiveMessage();
             }
+            System.out.println("Closed connections");
         } catch (Exception io) {
             io.printStackTrace();
         } finally {
@@ -60,12 +63,10 @@ public class Master {
                 }
             }
         }
-
-
     }
 
     public void delegate() throws IOException {
-        out = new ObjectOutputStream(socket.getOutputStream());
+        ObjectOutputStream out = new ObjectOutputStream(socket.getOutputStream());
 
         Thread t = new OutputThread(socket, activeClients, out);
 
@@ -82,10 +83,24 @@ public class Master {
         }
     }
 
+    public static int computeRuntime(CopyOnWriteArrayList<Job> slaveJobs, String slaveType){
+        int total = 0;
+        for(Job j:slaveJobs){
+            if(j.getJobType().equals(slaveType)){
+                total += 2;
+            }
+            else {
+                total += 10;
+            }
+        }
+        return total;
+    }
+
     static class OutputThread extends Thread {
         final Socket socket;
         HashMap<Socket, Object> activeClients;
         ObjectOutputStream output;
+        private final AtomicBoolean running = new AtomicBoolean(false);
 
         public OutputThread(Socket s, HashMap<Socket, Object> clients, ObjectOutputStream out) {
             activeClients = clients;
@@ -93,29 +108,65 @@ public class Master {
             output = out;
         }
 
+        public void end(){running.set(false);}
+
+        private String getTargetSlave(Job job){
+
+            int slaveATotal = computeRuntime(slaveAJobs, "A");
+            int slaveBTotal = computeRuntime(slaveBJobs, "B");
+            String targetSlave;
+            if(job.getJobType().equals("A")){
+                slaveATotal += 2;
+                slaveBTotal += 10;
+            }
+            else {
+                slaveATotal += 10;
+                slaveBTotal += 2;
+            }
+            if(slaveATotal < slaveBTotal){
+                targetSlave = "A";
+            }
+            else {
+                targetSlave = "B";
+            }
+
+            return targetSlave;
+        }
+
         @Override
         public void run() {
             try {
                 Job job;
-                while (true) {
+                running.set(true);
+                while (running.get()) {
                     synchronized (jobs) {
                         if (jobs.size() > 0) {
                             if (activeClients.get(socket) instanceof Slave) {
                                 job = jobs.get(0);
                                 Slave slave = (Slave) activeClients.get(socket);
 
-                                if (job.getJobType().equals("Completed")) {
+                                if (job.getJobType().equals("COMPLETED")) {
                                     output.writeObject(job);
                                     output.flush();
+                                    this.end();
                                     break;
                                 }
 
-                                if (slave.getSlaveType().equals(job.getJobType())) {
+                                if (slave.getSlaveType().equals(getTargetSlave(job))) {
                                     output.writeObject(job);
                                     output.flush();
-                                    System.out.println("Sent job " + job.getId() + ", type " + job.getJobType());
+                                    System.out.println(job.toString() + " sent to " + slave.slaveTypeToString());
+                                    if(slave.getSlaveType().equals("A")){
+                                        slaveAJobs.add(job);
+                                    }
+                                    else {
+                                        slaveBJobs.add(job);
+                                    }
                                     jobs.remove(job);
                                 }
+                            }
+                            else {
+                                this.end();
                             }
                         }
                     }
@@ -137,20 +188,37 @@ public class Master {
             input = in;
         }
 
+        private boolean doesContain(CopyOnWriteArrayList<Job> a, Job j){
+            for(Job job : a){
+                if(job.getId().equals(j.getId())){
+                    return true;
+                }
+            }
+            return false;
+        }
+
         @Override
         public void run() {
             try {
-                Object obj = input.readObject();
-                System.out.println(obj);
-                Job job = (Job)obj;
+                Job job = (Job)input.readObject();
                 while (true) {
-                    jobs.add(job);
-                    System.out.println("Received job " + job.getId());
-                    job = (Job) input.readObject();
-                    if (job.getJobType().equals("Completed")) {
+                    if (job.getJobType().equals("COMPLETED")) {
                         jobs.add(job);
                         break;
                     }
+                    else if(doesContain(slaveAJobs, job)){
+                        slaveAJobs.remove(job);
+                        System.out.println("SLAVE-A completed " + job.toString());
+                    }
+                    else if(doesContain(slaveBJobs, job)){
+                        slaveBJobs.remove(job);
+                        System.out.println("SLAVE-B completed " + job.toString());
+                    }
+                    else {
+                        jobs.add(job);
+                        System.out.println("Received " + job.toString());
+                    }
+                    job = (Job) input.readObject();
                 }
 
                 System.out.println("FINISHED: InputThread");
@@ -160,7 +228,7 @@ public class Master {
         }
     }
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
         Master master = new Master(5000);
     }
 }
