@@ -1,8 +1,6 @@
 package main;
 
-import java.io.IOException;
-import java.io.ObjectOutputStream;
-import java.io.Serializable;
+import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
@@ -11,6 +9,8 @@ public class Client implements Serializable {
     private static final transient Scanner sc = new Scanner(System.in);
     private static int idNumber = 0;
     private static transient ObjectOutputStream out;
+    private transient Socket socket;
+    private boolean completed = false;
 
     Client(int port) {
         this.port = port;
@@ -19,12 +19,13 @@ public class Client implements Serializable {
 
     private void connect() {
         try {
-            Socket socket = new Socket("127.0.0.1", port);
+            socket = new Socket("127.0.0.1", port);
             System.out.println("Connected");
 
             out = new ObjectOutputStream(socket.getOutputStream());
             out.writeObject(this);
             out.flush();
+            new JobReceiptThread().start();
             sendJobToMasterAndReceiveFromUser();
         } catch (IOException | InterruptedException e) {
             e.printStackTrace();
@@ -44,12 +45,13 @@ public class Client implements Serializable {
             thread.start();
             thread.join();
             if (jobType.equals("COMPLETED")) {
+                completed = true;
                 break;
             }
         }
     }
 
-    public static class SendToMaster extends Thread {
+    private static class SendToMaster extends Thread {
         final ObjectOutputStream outputStream;
         final Job job;
 
@@ -64,6 +66,28 @@ public class Client implements Serializable {
                 outputStream.flush();
             } catch (IOException e) {
                 e.printStackTrace();
+            }
+        }
+    }
+
+    private class JobReceiptThread extends Thread{
+
+        @Override
+        public void run(){
+            try {
+                ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
+                while (true) {
+                    Job newJob = (Job) in.readObject();
+                    if (newJob.getJobType().equals("COMPLETED") && completed) {
+                        System.out.println("All jobs have completed");
+                        break;
+                    }
+                }
+
+                System.out.println("Client - FINISHED: JobReceiptThread");
+            }
+            catch (IOException | ClassNotFoundException io){
+                io.printStackTrace();
             }
         }
     }

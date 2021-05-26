@@ -17,6 +17,8 @@ public class Master {
     private static Socket socket;
     private final int port;
     private static ObjectInputStream in;
+    private static int clientCount = 0;
+    private static int completedClients = 0;
 
     public Master(int port){
         this.port = port;
@@ -46,6 +48,7 @@ public class Master {
                     Client client = (Client) input;
                     activeClients.put(socket, client);
                     System.out.println("Socket: " + socket + ", client: " + client);
+                    clientCount++;
                 }
 
                 delegate();
@@ -145,14 +148,14 @@ public class Master {
                                 job = jobs.get(0);
                                 Slave slave = (Slave) activeClients.get(socket);
 
-                                if (job.getJobType().equals("COMPLETED")) {
+                                if (job.getJobType().equals("COMPLETED") && clientCount == completedClients) {
                                     output.writeObject(job);
                                     output.flush();
                                     this.end();
                                     break;
                                 }
 
-                                if (slave.getSlaveType().equals(getTargetSlave(job))) {
+                                if (slave.getSlaveType().equals(getTargetSlave(job)) && !job.getJobType().equals("COMPLETED")) {
                                     output.writeObject(job);
                                     output.flush();
                                     System.out.println(job.toString() + " sent to " + slave.slaveTypeToString());
@@ -166,7 +169,14 @@ public class Master {
                                 }
                             }
                             else {
-                                this.end();
+                                job = jobs.get(0);
+                                if (job.getJobType().equals("COMPLETED")) {
+                                    output.writeObject(job);
+                                    output.flush();
+                                    jobs.remove(job);
+                                    this.end();
+                                    break;
+                                }
                             }
                         }
                     }
@@ -203,6 +213,7 @@ public class Master {
                 Job job = (Job)input.readObject();
                 while (true) {
                     if (job.getJobType().equals("COMPLETED")) {
+                        completedClients++;
                         jobs.add(job);
                         break;
                     }
